@@ -876,6 +876,7 @@ app.post('/api/create-job', async (req, res) => {
 
 // API Endpoint: Generate and save shipping labels
 // API Endpoint: Generate and save shipping labels
+// API Endpoint: Generate and DOWNLOAD labels directly (No disk save)
 app.post('/api/generate-labels', async (req, res) => {
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
@@ -888,6 +889,7 @@ app.post('/api/generate-labels', async (req, res) => {
 
     console.log(`📦 Generating labels for ${doNumber} (${barcodes.length} labels) with layout: ${layout || '4-per-page'}`);
 
+    // Generate the PDF
     const pdfDoc = await generateShippingLabels(
       doNumber,
       barcodes,
@@ -901,58 +903,16 @@ app.post('/api/generate-labels', async (req, res) => {
     const pdfBytes = await pdfDoc.save();
 
     const filename = `labels_${doNumber}_${Date.now()}.pdf`;
-    const filepath = path.join(labelsDir, filename);
+
+    // Set response headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBytes.length);
     
-    console.log(`💾 Saving PDF to: ${filepath}`);
-    console.log(`📁 labelsDir exists: ${fs.existsSync(labelsDir)}`);
-    
-    // Write the file
-    try {
-      fs.writeFileSync(filepath, pdfBytes);
-      console.log(`✅ PDF saved successfully`);
-      console.log(`📄 File exists after save: ${fs.existsSync(filepath)}`);
-      console.log(`📄 File size: ${fs.statSync(filepath).size} bytes`);
-    } catch (writeError) {
-      console.error(`❌ Error writing file:`, writeError);
-      throw writeError;
-    }
+    // Send the PDF directly
+    res.send(pdfBytes);
 
-    const fileUrl = `/uploads/labels/${filename}`;
-
-    // Save to labels table
-    const query = `
-      INSERT INTO labels (do_number, file_name, file_path, file_url, label_count, barcodes)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
-    `;
-
-    const result = await pool.query(query, [
-      doNumber,
-      filename,
-      filepath,
-      fileUrl,
-      barcodes.length,
-      JSON.stringify(barcodes)
-    ]);
-
-    // Update job with label URL
-    await pool.query(
-      'UPDATE jobs SET label_url = $1 WHERE do_number = $2',
-      [fileUrl, doNumber]
-    );
-
-    console.log(`✅ Labels saved: ${filename} (ID: ${result.rows[0].id})`);
-    console.log(`📄 Full URL: https://dtrack-backend.onrender.com/api/download-labels/${filename}`);
-
-    return res.json({
-      success: true,
-      id: result.rows[0].id,
-      filename: filename,
-      url: fileUrl,
-      doNumber: doNumber,
-      labelCount: barcodes.length,
-      barcodes: barcodes
-    });
+    console.log(`✅ Labels PDF sent for ${doNumber}`);
 
   } catch (error) {
     console.error('❌ Error generating labels:', error);
