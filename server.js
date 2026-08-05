@@ -37,16 +37,65 @@ pool.connect((err, client, release) => {
   }
 });
 
-// ===== FILE STORAGE SETUP =====
+// ===== FILE STORAGE SETUP WITH EXTENSIVE LOGGING =====
 const uploadsDir = path.join(__dirname, 'uploads');
 const labelsDir = path.join(uploadsDir, 'labels');
 
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+console.log('========================================');
+console.log('📁 FILE STORAGE SETUP');
+console.log('========================================');
+console.log(`📁 Project root: ${__dirname}`);
+console.log(`📁 Uploads directory path: ${uploadsDir}`);
+console.log(`📁 Labels directory path: ${labelsDir}`);
+
+// Create uploads directory if it doesn't exist
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    console.log(`📁 Uploads directory does NOT exist. Creating...`);
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log(`✅ Uploads directory created at: ${uploadsDir}`);
+  } else {
+    console.log(`✅ Uploads directory already exists at: ${uploadsDir}`);
+  }
+} catch (error) {
+  console.error(`❌ Error creating uploads directory:`, error.message);
 }
-if (!fs.existsSync(labelsDir)) {
-  fs.mkdirSync(labelsDir, { recursive: true });
+
+// Create labels directory if it doesn't exist
+try {
+  if (!fs.existsSync(labelsDir)) {
+    console.log(`📁 Labels directory does NOT exist. Creating...`);
+    fs.mkdirSync(labelsDir, { recursive: true });
+    console.log(`✅ Labels directory created at: ${labelsDir}`);
+  } else {
+    console.log(`✅ Labels directory already exists at: ${labelsDir}`);
+  }
+} catch (error) {
+  console.error(`❌ Error creating labels directory:`, error.message);
 }
+
+// Verify directories exist and are writable
+try {
+  // Test if uploads directory is writable
+  const testFile = path.join(uploadsDir, 'test-write.txt');
+  fs.writeFileSync(testFile, 'Test write access');
+  fs.unlinkSync(testFile);
+  console.log(`✅ Uploads directory is writable`);
+} catch (error) {
+  console.error(`❌ Uploads directory is NOT writable:`, error.message);
+}
+
+try {
+  // Test if labels directory is writable
+  const testFile = path.join(labelsDir, 'test-write.txt');
+  fs.writeFileSync(testFile, 'Test write access');
+  fs.unlinkSync(testFile);
+  console.log(`✅ Labels directory is writable`);
+} catch (error) {
+  console.error(`❌ Labels directory is NOT writable:`, error.message);
+}
+
+console.log('========================================');
 
 app.use(cors());
 app.use(express.json());
@@ -65,12 +114,15 @@ const upload = multer({
 // Configure multer for label file upload
 const labelStorage = multer.diskStorage({
   destination: function (req, file, cb) {
+    console.log(`📁 Saving label to: ${labelsDir}`);
     cb(null, labelsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, `label-${uniqueSuffix}${ext}`);
+    const filename = `label-${uniqueSuffix}${ext}`;
+    console.log(`📄 Label filename: ${filename}`);
+    cb(null, filename);
   }
 });
 
@@ -546,7 +598,19 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'healthy',
       database: 'connected',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      directories: {
+        uploads: {
+          path: uploadsDir,
+          exists: fs.existsSync(uploadsDir),
+          writable: true // We'll check this
+        },
+        labels: {
+          path: labelsDir,
+          exists: fs.existsSync(labelsDir),
+          writable: true
+        }
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -837,7 +901,10 @@ app.post('/api/generate-labels', async (req, res) => {
 
     const filename = `labels_${doNumber}_${Date.now()}.pdf`;
     const filepath = path.join(labelsDir, filename);
+    
+    console.log(`💾 Saving PDF to: ${filepath}`);
     fs.writeFileSync(filepath, pdfBytes);
+    console.log(`✅ PDF saved successfully`);
 
     const fileUrl = `/uploads/labels/${filename}`;
 
@@ -890,7 +957,10 @@ app.get('/api/download-labels/:filename', (req, res) => {
     const filename = req.params.filename;
     const filepath = path.join(labelsDir, filename);
 
+    console.log(`📥 Downloading label: ${filepath}`);
+
     if (!fs.existsSync(filepath)) {
+      console.log(`❌ File not found: ${filepath}`);
       return res.status(404).json({ error: 'File not found' });
     }
 
@@ -935,6 +1005,8 @@ app.post('/api/upload-label', uploadLabel.single('label'), async (req, res) => {
     const filepath = req.file.path;
     const filename = req.file.filename;
     const fileUrl = `/uploads/labels/${filename}`;
+
+    console.log(`📤 Uploaded label: ${filename} at ${filepath}`);
 
     // Save to database
     const query = `
@@ -986,6 +1058,7 @@ app.delete('/api/labels/:id', async (req, res) => {
     // Delete file
     if (fs.existsSync(filepath)) {
       fs.unlinkSync(filepath);
+      console.log(`🗑️ Deleted file: ${filepath}`);
     }
 
     // Delete from database
@@ -1017,7 +1090,17 @@ app.get('/', (req, res) => {
       'GET /api/jobs': 'Get all jobs from Detrack API',
       'GET /api/test': 'Test endpoint'
     },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    directories: {
+      uploads: {
+        path: uploadsDir,
+        exists: fs.existsSync(uploadsDir)
+      },
+      labels: {
+        path: labelsDir,
+        exists: fs.existsSync(labelsDir)
+      }
+    }
   });
 });
 
@@ -1027,7 +1110,19 @@ app.get('/api/test', (req, res) => {
     message: 'Detrack API integration is working',
     timestamp: new Date().toISOString(),
     apiKeyLoaded: !!DETRACK_API_KEY,
-    apiKeyPreview: DETRACK_API_KEY ? DETRACK_API_KEY.substring(0, 10) + '...' : 'Not loaded'
+    apiKeyPreview: DETRACK_API_KEY ? DETRACK_API_KEY.substring(0, 10) + '...' : 'Not loaded',
+    directories: {
+      uploads: {
+        path: uploadsDir,
+        exists: fs.existsSync(uploadsDir),
+        contents: fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : []
+      },
+      labels: {
+        path: labelsDir,
+        exists: fs.existsSync(labelsDir),
+        contents: fs.existsSync(labelsDir) ? fs.readdirSync(labelsDir) : []
+      }
+    }
   });
 });
 
@@ -1489,10 +1584,6 @@ app.post('/api/upload-manifest', upload.single('file'), async (req, res) => {
       }
     }
 
-    // ===== NO LABELS GENERATED DURING UPLOAD =====
-    // Labels are only generated when user clicks "Generate Labels" button
-    // No labelResults array, no labels table updates
-
     return res.json({
       success: true,
       total: jobs.length,
@@ -1545,18 +1636,25 @@ app.use((req, res) => {
 });
 
 // Start server
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
+  console.log('========================================');
   console.log(`✅ Server running on port ${PORT}`);
+  console.log('========================================');
   console.log(`📡 Test endpoint: http://localhost:${PORT}/api/test`);
   console.log(`📡 Health endpoint: http://localhost:${PORT}/api/health`);
   console.log(`📡 Database Jobs endpoint: http://localhost:${PORT}/api/db-jobs`);
   console.log(`📡 Detrack Jobs endpoint: http://localhost:${PORT}/api/jobs`);
   console.log(`📡 Create Job endpoint: http://localhost:${PORT}/api/create-job`);
   console.log(`📡 Labels endpoint: http://localhost:${PORT}/api/generate-labels`);
+  console.log('========================================');
   console.log(`🔑 API Key loaded: ${DETRACK_API_KEY ? 'Yes' : 'No'}`);
+  console.log(`📁 Project root: ${__dirname}`);
   console.log(`📁 Uploads folder: ${uploadsDir}`);
+  console.log(`📁 Uploads exists: ${fs.existsSync(uploadsDir)}`);
   console.log(`📁 Labels folder: ${labelsDir}`);
+  console.log(`📁 Labels exists: ${fs.existsSync(labelsDir)}`);
   console.log(`🗄️ Database: Connected to detrack_db`);
+  console.log('========================================');
   console.log(`📁 Waiting for requests...`);
 });
