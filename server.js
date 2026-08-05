@@ -874,16 +874,13 @@ app.post('/api/create-job', async (req, res) => {
   }
 });
 
-// API Endpoint: Generate and save shipping labels
-// API Endpoint: Generate and save shipping labels
-// API Endpoint: Generate and DOWNLOAD labels directly (No disk save)
-// ===== GENERATE AND DOWNLOAD LABELS DIRECTLY =====
-// ===== GENERATE AND DOWNLOAD LABELS DIRECTLY =====
+// ===== GENERATE AND DOWNLOAD LABELS DIRECTLY (NO JSON) =====
 app.post('/api/generate-labels', async (req, res) => {
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
 
     console.log(`📦 Generating labels for ${doNumber} (${barcodes.length} labels)`);
+    console.log(`📋 Layout requested: ${layout || '4-per-page'}`);
 
     if (!doNumber || !barcodes || barcodes.length === 0) {
       return res.status(400).json({
@@ -908,16 +905,18 @@ app.post('/api/generate-labels', async (req, res) => {
 
     console.log(`✅ PDF generated: ${pdfBytes.length} bytes`);
 
-    // ⭐ IMPORTANT: Set headers for PDF download
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', pdfBytes.length);
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    // ⭐ CRITICAL: Set headers for PDF download
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBytes.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     
-    // ⭐ IMPORTANT: Send the PDF as binary buffer
-    res.send(Buffer.from(pdfBytes));
+    // ⭐ CRITICAL: Send the PDF as binary buffer
+    res.end(Buffer.from(pdfBytes));
 
     console.log(`✅ PDF sent for ${doNumber} (${barcodes.length} labels, ${pdfBytes.length} bytes)`);
 
