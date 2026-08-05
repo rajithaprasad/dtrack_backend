@@ -1,4 +1,4 @@
-// server.js - Full Integration with PostgreSQL with Better Error Logging
+// server.js - Full Integration with PostgreSQL (No Table Creation)
 
 const express = require('express');
 const cors = require('cors');
@@ -15,12 +15,6 @@ const { Canvas } = require('canvas');
 const { Pool } = require('pg');
 const app = express();
 
-// ===== ENVIRONMENT CONFIGURATION =====
-const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
-const PORT = process.env.PORT || 5000;
-
-console.log('🚀 Starting server with environment:', isProduction ? 'PRODUCTION' : 'DEVELOPMENT');
-
 // ===== DATABASE CONNECTION =====
 const pool = new Pool({
   host: 'dpg-d9por5ajnfac73a497l0-a.oregon-postgres.render.com',
@@ -30,21 +24,13 @@ const pool = new Pool({
   password: 'PdJYrZxp1zrMfVAtfJ7EsiMTdTsxoJRz',
   ssl: {
     rejectUnauthorized: false // Required for Render
-  },
-  // Connection pool settings
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  }
 });
 
-// Test database connection with better error handling
+// Test database connection only (no table creation)
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('❌ Database connection error:', {
-      message: err.message,
-      code: err.code,
-      stack: err.stack
-    });
+    console.error('❌ Database connection error:', err.stack);
   } else {
     console.log('✅ Database connected successfully');
     release();
@@ -52,36 +38,19 @@ pool.connect((err, client, release) => {
 });
 
 // ===== FILE STORAGE SETUP =====
-// Use /tmp on Render, local uploads folder for development
-const baseDir = isProduction ? '/tmp' : __dirname;
-const uploadsDir = path.join(baseDir, 'uploads');
+const uploadsDir = path.join(__dirname, 'uploads');
 const labelsDir = path.join(uploadsDir, 'labels');
 
-console.log('📁 Base directory:', baseDir);
-console.log('📁 Uploads directory:', uploadsDir);
-console.log('📁 Labels directory:', labelsDir);
-
-// Ensure directories exist
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('📁 Created uploads directory');
-  }
-  if (!fs.existsSync(labelsDir)) {
-    fs.mkdirSync(labelsDir, { recursive: true });
-    console.log('📁 Created labels directory');
-  }
-} catch (error) {
-  console.error('❌ Error creating directories:', error);
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(labelsDir)) {
+  fs.mkdirSync(labelsDir, { recursive: true });
 }
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Static file serving
+app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
-app.use('/downloads', express.static(labelsDir));
 
 // Detrack API Configuration
 const DETRACK_API_KEY = '20928476aa7ee4a9348bc160a1e83d1afee75d69183b6934';
@@ -118,33 +87,6 @@ const uploadLabel = multer({
       cb(new Error('Only PDF, PNG, and JPEG files are allowed'));
     }
   }
-});
-
-// ============== LOGGING MIDDLEWARE ==============
-app.use((req, res, next) => {
-  const start = Date.now();
-  console.log(`📨 ${req.method} ${req.path}`);
-  next();
-  const duration = Date.now() - start;
-  console.log(`✅ ${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`);
-});
-
-// ============== ERROR HANDLING MIDDLEWARE ==============
-app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    body: req.body,
-    query: req.query
-  });
-  
-  res.status(500).json({
-    error: 'Internal server error',
-    message: err.message,
-    path: req.path
-  });
 });
 
 // ============== BARCODE & QR CODE GENERATION ==============
@@ -360,9 +302,7 @@ const generateLabelOnPage = async (page, x, y, width, height, data) => {
         width: bw,
         height: bh,
       });
-    } catch (e) {
-      console.warn('Could not embed barcode:', e.message);
-    }
+    } catch (e) {}
   }
 
   // === 3. QR CODE (Top Right) ===
@@ -387,9 +327,7 @@ const generateLabelOnPage = async (page, x, y, width, height, data) => {
         font: font,
         color: rgb(0.5, 0.5, 0.5),
       });
-    } catch (e) {
-      console.warn('Could not embed QR code:', e.message);
-    }
+    } catch (e) {}
   }
 
   // === 4. BOX NUMBER ===
@@ -608,15 +546,13 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'healthy',
       database: 'connected',
-      environment: isProduction ? 'production' : 'development',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     res.status(500).json({
       status: 'unhealthy',
       database: 'disconnected',
-      error: error.message,
-      environment: isProduction ? 'production' : 'development'
+      error: error.message
     });
   }
 });
@@ -643,11 +579,7 @@ app.get('/api/db-jobs', async (req, res) => {
       data: result.rows
     });
   } catch (error) {
-    console.error('❌ Database fetch error:', {
-      message: error.message,
-      code: error.code,
-      stack: error.stack
-    });
+    console.error('❌ Database fetch error:', error.message);
     return res.status(500).json({
       error: 'Failed to fetch jobs from database',
       details: error.message
@@ -674,11 +606,7 @@ app.get('/api/db-jobs/:id', async (req, res) => {
       data: result.rows[0]
     });
   } catch (error) {
-    console.error('❌ Database fetch error:', {
-      message: error.message,
-      code: error.code,
-      stack: error.stack
-    });
+    console.error('❌ Database fetch error:', error.message);
     return res.status(500).json({
       error: 'Failed to fetch job from database',
       details: error.message
@@ -713,11 +641,7 @@ app.get('/api/job-by-donumber', async (req, res) => {
       data: job
     });
   } catch (error) {
-    console.error('❌ Fetch job by DO number error:', {
-      message: error.message,
-      response: error.response?.data,
-      stack: error.stack
-    });
+    console.error('❌ Fetch job by DO number error:', error.message);
     return res.status(500).json({
       error: 'Failed to fetch job from Detrack',
       details: error.response?.data?.message || error.message
@@ -878,11 +802,7 @@ app.post('/api/create-job', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('❌ Error creating job:', {
-      message: error.message,
-      response: error.response?.data,
-      stack: error.stack
-    });
+    console.error('❌ Error creating job:', error);
     return res.status(500).json({
       error: 'Failed to create job',
       details: error.response?.data?.message || error.message
@@ -890,27 +810,19 @@ app.post('/api/create-job', async (req, res) => {
   }
 });
 
-// ===== GENERATE SHIPPING LABELS ENDPOINT (FIXED FOR RENDER) =====
+// API Endpoint: Generate and save shipping labels
 app.post('/api/generate-labels', async (req, res) => {
-  const startTime = Date.now();
-  console.log('📦 Generating labels...');
-  console.log('📋 Request body:', JSON.stringify(req.body, null, 2));
-  
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
 
-    // Validate required fields
     if (!doNumber || !barcodes || barcodes.length === 0) {
-      console.error('❌ Missing required fields');
       return res.status(400).json({
-        error: 'Missing required fields: doNumber and barcodes',
-        received: { doNumber, barcodesCount: barcodes?.length || 0 }
+        error: 'Missing required fields: doNumber and barcodes'
       });
     }
 
-    console.log(`📦 Generating ${barcodes.length} labels for ${doNumber} (layout: ${layout || '4-per-page'})`);
+    console.log(`📦 Generating labels for ${doNumber} (${barcodes.length} labels) with layout: ${layout || '4-per-page'}`);
 
-    // Generate PDF
     const pdfDoc = await generateShippingLabels(
       doNumber,
       barcodes,
@@ -923,187 +835,76 @@ app.post('/api/generate-labels', async (req, res) => {
     );
     const pdfBytes = await pdfDoc.save();
 
-    // Generate filename and path
     const filename = `labels_${doNumber}_${Date.now()}.pdf`;
     const filepath = path.join(labelsDir, filename);
-    
-    console.log(`💾 Saving PDF to: ${filepath}`);
-    
-    // Save file
     fs.writeFileSync(filepath, pdfBytes);
-    
-    // Verify file was saved
-    if (!fs.existsSync(filepath)) {
-      throw new Error(`File was not saved successfully: ${filepath}`);
-    }
-    
-    console.log(`✅ PDF saved: ${filename} (${pdfBytes.length} bytes)`);
 
-    // Generate file URL
-    const fileUrl = `/downloads/${filename}`;
+    const fileUrl = `/uploads/labels/${filename}`;
 
     // Save to labels table
-    try {
-      const query = `
-        INSERT INTO labels (do_number, file_name, file_path, file_url, label_count, barcodes)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id
-      `;
+    const query = `
+      INSERT INTO labels (do_number, file_name, file_path, file_url, label_count, barcodes)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
+    `;
 
-      const result = await pool.query(query, [
-        doNumber,
-        filename,
-        filepath,
-        fileUrl,
-        barcodes.length,
-        JSON.stringify(barcodes)
-      ]);
+    const result = await pool.query(query, [
+      doNumber,
+      filename,
+      filepath,
+      fileUrl,
+      barcodes.length,
+      JSON.stringify(barcodes)
+    ]);
 
-      console.log(`✅ Labels record saved to database (ID: ${result.rows[0].id})`);
+    // Update job with label URL
+    await pool.query(
+      'UPDATE jobs SET label_url = $1 WHERE do_number = $2',
+      [fileUrl, doNumber]
+    );
 
-      // Update job with label URL
-      await pool.query(
-        'UPDATE jobs SET label_url = $1 WHERE do_number = $2',
-        [fileUrl, doNumber]
-      );
-    } catch (dbError) {
-      console.error('❌ Database error (but continuing):', {
-        message: dbError.message,
-        code: dbError.code,
-        detail: dbError.detail
-      });
-      // Don't fail the request - we still have the PDF
-    }
+    console.log(`✅ Labels saved: ${filename} (ID: ${result.rows[0].id})`);
 
-    // Return success with file info
-    const responseData = {
+    return res.json({
       success: true,
+      id: result.rows[0].id,
       filename: filename,
       url: fileUrl,
       doNumber: doNumber,
       labelCount: barcodes.length,
-      barcodes: barcodes,
-      fileSize: pdfBytes.length,
-      environment: isProduction ? 'production' : 'development',
-      downloadUrl: `/api/download-labels/${filename}`,
-      directDownload: `${req.protocol}://${req.get('host')}/downloads/${filename}`
-    };
-    
-    console.log(`✅ Labels generated successfully in ${Date.now() - startTime}ms`);
-    return res.json(responseData);
+      barcodes: barcodes
+    });
 
   } catch (error) {
-    console.error('❌ Error generating labels:', {
-      message: error.message,
-      stack: error.stack,
-      body: req.body
-    });
+    console.error('❌ Error generating labels:', error);
     return res.status(500).json({
       error: 'Failed to generate shipping labels',
-      details: error.message,
-      stack: isProduction ? undefined : error.stack
+      details: error.message
     });
   }
 });
 
-// ===== DOWNLOAD SHIPPING LABELS (FIXED FOR RENDER) =====
-app.get('/api/download-labels/:filename', async (req, res) => {
-  const filename = req.params.filename;
-  console.log(`📥 Downloading labels: ${filename}`);
-  
+// API Endpoint: Download shipping labels
+app.get('/api/download-labels/:filename', (req, res) => {
   try {
-    // Check multiple possible locations
-    const possiblePaths = [
-      path.join(labelsDir, filename),
-      path.join('/tmp/uploads/labels', filename),
-      path.join(uploadsDir, 'labels', filename),
-      path.join(labelsDir, filename) // Try again
-    ];
-    
-    // Also check database for file path
-    let dbFilePath = null;
-    try {
-      const result = await pool.query(
-        'SELECT file_path FROM labels WHERE file_name = $1',
-        [filename]
-      );
-      if (result.rows.length > 0 && result.rows[0].file_path) {
-        dbFilePath = result.rows[0].file_path;
-        console.log(`📂 Found file path in database: ${dbFilePath}`);
-        // Add database path to possible locations
-        possiblePaths.unshift(dbFilePath);
-      }
-    } catch (dbError) {
-      console.warn('⚠️ Could not query database for file path:', dbError.message);
-    }
-    
-    // Find the file
-    let filePath = null;
-    for (const testPath of possiblePaths) {
-      if (testPath && fs.existsSync(testPath)) {
-        filePath = testPath;
-        console.log(`✅ Found file at: ${filePath}`);
-        break;
-      }
-    }
-    
-    if (!filePath) {
-      console.error('❌ File not found in any location:', {
-        filename,
-        searchedPaths: possiblePaths,
-        labelsDir: labelsDir,
-        uploadsDir: uploadsDir
-      });
-      
-      // Check if directory exists
-      console.log(`📁 Labels directory exists: ${fs.existsSync(labelsDir)}`);
-      if (fs.existsSync(labelsDir)) {
-        const files = fs.readdirSync(labelsDir);
-        console.log(`📁 Files in labels directory: ${files.join(', ')}`);
-      }
-      
-      return res.status(404).json({
-        error: 'File not found',
-        filename: filename,
-        searchedPaths: possiblePaths,
-        labelsDir: labelsDir,
-        environment: isProduction ? 'production' : 'development'
-      });
+    const filename = req.params.filename;
+    const filepath = path.join(labelsDir, filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ error: 'File not found' });
     }
 
-    // Send the file
-    const stat = fs.statSync(filePath);
-    console.log(`✅ Sending file: ${filename} (${stat.size} bytes)`);
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', stat.size);
-    
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-    
-    fileStream.on('error', (error) => {
-      console.error('❌ Error streaming file:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Error streaming file' });
-      }
-    });
-
+    res.download(filepath, filename);
   } catch (error) {
-    console.error('❌ Error downloading labels:', {
-      message: error.message,
-      stack: error.stack,
-      filename: filename
-    });
+    console.error('❌ Error downloading labels:', error);
     return res.status(500).json({
       error: 'Failed to download labels',
-      details: error.message,
-      filename: filename
+      details: error.message
     });
   }
 });
 
-// ===== GET LABELS FOR A JOB =====
+// API Endpoint: Get labels for a job
 app.get('/api/labels/:doNumber', async (req, res) => {
   try {
     const doNumber = req.params.doNumber;
@@ -1123,7 +924,7 @@ app.get('/api/labels/:doNumber', async (req, res) => {
   }
 });
 
-// ===== UPLOAD LABEL MANUALLY =====
+// API Endpoint: Upload label manually
 app.post('/api/upload-label', uploadLabel.single('label'), async (req, res) => {
   try {
     if (!req.file) {
@@ -1165,7 +966,7 @@ app.post('/api/upload-label', uploadLabel.single('label'), async (req, res) => {
   }
 });
 
-// ===== DELETE LABEL =====
+// API Endpoint: Delete label
 app.delete('/api/labels/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -1202,7 +1003,6 @@ app.get('/', (req, res) => {
   res.json({
     status: '✅ Server is running',
     message: 'Detrack API integration with PostgreSQL is ready',
-    environment: isProduction ? 'production' : 'development',
     endpoints: {
       'POST /api/upload-manifest': 'Upload Excel file and create jobs',
       'POST /api/create-job': 'Create a single job directly',
@@ -1226,15 +1026,8 @@ app.get('/api/test', (req, res) => {
     status: '✅ Server is running',
     message: 'Detrack API integration is working',
     timestamp: new Date().toISOString(),
-    environment: isProduction ? 'production' : 'development',
     apiKeyLoaded: !!DETRACK_API_KEY,
-    apiKeyPreview: DETRACK_API_KEY ? DETRACK_API_KEY.substring(0, 10) + '...' : 'Not loaded',
-    directories: {
-      uploads: uploadsDir,
-      labels: labelsDir,
-      uploadsExists: fs.existsSync(uploadsDir),
-      labelsExists: fs.existsSync(labelsDir)
-    }
+    apiKeyPreview: DETRACK_API_KEY ? DETRACK_API_KEY.substring(0, 10) + '...' : 'Not loaded'
   });
 });
 
@@ -1256,11 +1049,7 @@ app.get('/api/jobs', async (req, res) => {
       data: response.data
     });
   } catch (error) {
-    console.error('❌ Fetch jobs error:', {
-      message: error.message,
-      response: error.response?.data,
-      stack: error.stack
-    });
+    console.error('❌ Fetch jobs error:', error.message);
     return res.status(500).json({
       error: 'Failed to fetch jobs from Detrack',
       details: error.response?.data?.message || error.message
@@ -1284,11 +1073,7 @@ app.get('/api/jobs/:id', async (req, res) => {
       data: response.data
     });
   } catch (error) {
-    console.error('❌ Fetch job error:', {
-      message: error.message,
-      response: error.response?.data,
-      stack: error.stack
-    });
+    console.error('❌ Fetch job error:', error.message);
     return res.status(500).json({
       error: 'Failed to fetch job',
       details: error.response?.data?.message || error.message
@@ -1622,7 +1407,7 @@ app.post('/api/upload-manifest', upload.single('file'), async (req, res) => {
         if (response.data && response.data.data && response.data.data.id) {
           const detrackId = response.data.data.id;
 
-          // Save job to PostgreSQL
+          // Save job to PostgreSQL (NO LABELS GENERATED HERE)
           const query = `
             INSERT INTO jobs (
               do_number, customer_name, customer_company, phone, 
@@ -1695,10 +1480,7 @@ app.post('/api/upload-manifest', upload.single('file'), async (req, res) => {
         }
 
       } catch (error) {
-        console.error(`   ❌ Failed to create ${job.do_number}:`, {
-          message: error.message,
-          response: error.response?.data
-        });
+        console.error(`   ❌ Failed to create ${job.do_number}:`, error.response?.data || error.message);
         failedJobs.push({
           do_number: job.do_number,
           error: error.response?.data?.message || error.message,
@@ -1706,6 +1488,10 @@ app.post('/api/upload-manifest', upload.single('file'), async (req, res) => {
         });
       }
     }
+
+    // ===== NO LABELS GENERATED DURING UPLOAD =====
+    // Labels are only generated when user clicks "Generate Labels" button
+    // No labelResults array, no labels table updates
 
     return res.json({
       success: true,
@@ -1723,25 +1509,20 @@ app.post('/api/upload-manifest', upload.single('file'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Upload error:', {
-      message: error.message,
-      stack: error.stack
-    });
+    console.error('❌ Upload error:', error);
     return res.status(500).json({
       error: 'Failed to process upload',
       details: error.message,
-      stack: isProduction ? undefined : error.stack
+      stack: error.stack
     });
   }
 });
 
 // ============== 404 HANDLER ==============
 app.use((req, res) => {
-  console.log(`❌ 404 - Route not found: ${req.method} ${req.path}`);
   res.status(404).json({
     error: 'Route not found',
     path: req.path,
-    method: req.method,
     availableEndpoints: [
       'GET /',
       'GET /api/health',
@@ -1763,32 +1544,19 @@ app.use((req, res) => {
   });
 });
 
-// ============== START SERVER ==============
-app.listen(PORT, '0.0.0.0', () => {
+// Start server
+const PORT = 5000;
+app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
-  console.log(`📡 Health endpoint: http://localhost:${PORT}/api/health`);
   console.log(`📡 Test endpoint: http://localhost:${PORT}/api/test`);
+  console.log(`📡 Health endpoint: http://localhost:${PORT}/api/health`);
+  console.log(`📡 Database Jobs endpoint: http://localhost:${PORT}/api/db-jobs`);
+  console.log(`📡 Detrack Jobs endpoint: http://localhost:${PORT}/api/jobs`);
+  console.log(`📡 Create Job endpoint: http://localhost:${PORT}/api/create-job`);
+  console.log(`📡 Labels endpoint: http://localhost:${PORT}/api/generate-labels`);
+  console.log(`🔑 API Key loaded: ${DETRACK_API_KEY ? 'Yes' : 'No'}`);
   console.log(`📁 Uploads folder: ${uploadsDir}`);
   console.log(`📁 Labels folder: ${labelsDir}`);
-  console.log(`🔑 API Key loaded: ${DETRACK_API_KEY ? 'Yes' : 'No'}`);
   console.log(`🗄️ Database: Connected to detrack_db`);
-  console.log(`🚀 Server ready for requests`);
-});
-
-// Handle process termination
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, closing connections...');
-  pool.end(() => {
-    console.log('✅ Database connections closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, closing connections...');
-  pool.end(() => {
-    console.log('✅ Database connections closed');
-    process.exit(0);
-  });
+  console.log(`📁 Waiting for requests...`);
 });
