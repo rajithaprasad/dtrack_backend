@@ -878,6 +878,7 @@ app.post('/api/create-job', async (req, res) => {
 // API Endpoint: Generate and save shipping labels
 // API Endpoint: Generate and DOWNLOAD labels directly (No disk save)
 // ===== GENERATE AND DOWNLOAD LABELS DIRECTLY =====
+// ===== GENERATE AND DOWNLOAD LABELS DIRECTLY =====
 app.post('/api/generate-labels', async (req, res) => {
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
@@ -907,7 +908,7 @@ app.post('/api/generate-labels', async (req, res) => {
 
     console.log(`✅ PDF generated: ${pdfBytes.length} bytes`);
 
-    // Set proper headers for PDF download
+    // ⭐ IMPORTANT: Set headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBytes.length);
@@ -915,7 +916,7 @@ app.post('/api/generate-labels', async (req, res) => {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     
-    // Send the PDF as binary buffer
+    // ⭐ IMPORTANT: Send the PDF as binary buffer
     res.send(Buffer.from(pdfBytes));
 
     console.log(`✅ PDF sent for ${doNumber} (${barcodes.length} labels, ${pdfBytes.length} bytes)`);
@@ -928,7 +929,6 @@ app.post('/api/generate-labels', async (req, res) => {
     });
   }
 });
-
 // API Endpoint: Download shipping labels
 // API Endpoint: Download shipping labels
 app.get('/api/download-labels/:filename', (req, res) => {
