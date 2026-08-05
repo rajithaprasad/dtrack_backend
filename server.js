@@ -875,6 +875,7 @@ app.post('/api/create-job', async (req, res) => {
 });
 
 // API Endpoint: Generate and save shipping labels
+// API Endpoint: Generate and save shipping labels
 app.post('/api/generate-labels', async (req, res) => {
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
@@ -903,8 +904,18 @@ app.post('/api/generate-labels', async (req, res) => {
     const filepath = path.join(labelsDir, filename);
     
     console.log(`💾 Saving PDF to: ${filepath}`);
-    fs.writeFileSync(filepath, pdfBytes);
-    console.log(`✅ PDF saved successfully`);
+    console.log(`📁 labelsDir exists: ${fs.existsSync(labelsDir)}`);
+    
+    // Write the file
+    try {
+      fs.writeFileSync(filepath, pdfBytes);
+      console.log(`✅ PDF saved successfully`);
+      console.log(`📄 File exists after save: ${fs.existsSync(filepath)}`);
+      console.log(`📄 File size: ${fs.statSync(filepath).size} bytes`);
+    } catch (writeError) {
+      console.error(`❌ Error writing file:`, writeError);
+      throw writeError;
+    }
 
     const fileUrl = `/uploads/labels/${filename}`;
 
@@ -931,6 +942,7 @@ app.post('/api/generate-labels', async (req, res) => {
     );
 
     console.log(`✅ Labels saved: ${filename} (ID: ${result.rows[0].id})`);
+    console.log(`📄 Full URL: https://dtrack-backend.onrender.com/api/download-labels/${filename}`);
 
     return res.json({
       success: true,
@@ -952,18 +964,29 @@ app.post('/api/generate-labels', async (req, res) => {
 });
 
 // API Endpoint: Download shipping labels
+// API Endpoint: Download shipping labels
 app.get('/api/download-labels/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
     const filepath = path.join(labelsDir, filename);
 
-    console.log(`📥 Downloading label: ${filepath}`);
+    console.log(`📥 Downloading label:`);
+    console.log(`   Filename: ${filename}`);
+    console.log(`   Full path: ${filepath}`);
+    console.log(`   Directory exists: ${fs.existsSync(labelsDir)}`);
+    
+    // List all files in labels directory
+    if (fs.existsSync(labelsDir)) {
+      const files = fs.readdirSync(labelsDir);
+      console.log(`   Files in labels directory (${files.length}):`, files);
+    }
 
     if (!fs.existsSync(filepath)) {
       console.log(`❌ File not found: ${filepath}`);
       return res.status(404).json({ error: 'File not found' });
     }
 
+    console.log(`✅ File found, sending download`);
     res.download(filepath, filename);
   } catch (error) {
     console.error('❌ Error downloading labels:', error);
@@ -973,7 +996,6 @@ app.get('/api/download-labels/:filename', (req, res) => {
     });
   }
 });
-
 // API Endpoint: Get labels for a job
 app.get('/api/labels/:doNumber', async (req, res) => {
   try {
