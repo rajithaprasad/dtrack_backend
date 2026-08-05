@@ -877,9 +877,12 @@ app.post('/api/create-job', async (req, res) => {
 // API Endpoint: Generate and save shipping labels
 // API Endpoint: Generate and save shipping labels
 // API Endpoint: Generate and DOWNLOAD labels directly (No disk save)
+// ===== GENERATE AND DOWNLOAD LABELS DIRECTLY =====
 app.post('/api/generate-labels', async (req, res) => {
   try {
     const { doNumber, barcodes, customerName, address, companyName, phone, instructions, layout } = req.body;
+
+    console.log(`📦 Generating labels for ${doNumber} (${barcodes.length} labels)`);
 
     if (!doNumber || !barcodes || barcodes.length === 0) {
       return res.status(400).json({
@@ -887,36 +890,39 @@ app.post('/api/generate-labels', async (req, res) => {
       });
     }
 
-    console.log(`📦 Generating labels for ${doNumber} (${barcodes.length} labels) with layout: ${layout || '4-per-page'}`);
-
     // Generate the PDF
     const pdfDoc = await generateShippingLabels(
       doNumber,
       barcodes,
-      customerName,
-      address,
+      customerName || 'Customer',
+      address || 'Address not provided',
       companyName || '',
       phone || '',
       instructions || '',
       layout || '4-per-page'
     );
+    
     const pdfBytes = await pdfDoc.save();
-
     const filename = `labels_${doNumber}_${Date.now()}.pdf`;
 
-    // Set response headers for PDF download
+    console.log(`✅ PDF generated: ${pdfBytes.length} bytes`);
+
+    // Set proper headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBytes.length);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
-    // Send the PDF directly
-    res.send(pdfBytes);
+    // Send the PDF as binary buffer
+    res.send(Buffer.from(pdfBytes));
 
-    console.log(`✅ Labels PDF sent for ${doNumber}`);
+    console.log(`✅ PDF sent for ${doNumber} (${barcodes.length} labels, ${pdfBytes.length} bytes)`);
 
   } catch (error) {
     console.error('❌ Error generating labels:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Failed to generate shipping labels',
       details: error.message
     });
