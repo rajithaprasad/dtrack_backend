@@ -130,7 +130,7 @@ exports.createCustomer = async (req, res) => {
       return res.status(409).json({ error: 'Email already exists' });
     }
 
-    // 🔥 CRITICAL: Check if group already has a customer
+    // Check if group already has a customer
     const existingCustomer = await User.findCustomerByGroup(groupId);
     if (existingCustomer) {
       return res.status(409).json({ 
@@ -277,5 +277,284 @@ exports.deleteUser = async (req, res) => {
   } catch (error) {
     console.error('❌ Delete user error:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+};
+
+// ===== ADMIN: CHECK IF GROUP HAS CUSTOMER =====
+exports.checkGroupCustomer = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    if (!groupId) {
+      return res.status(400).json({ error: 'Group ID is required' });
+    }
+
+    const customer = await User.findCustomerByGroup(groupId);
+
+    if (customer) {
+      return res.json({
+        success: true,
+        hasCustomer: true,
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          name: `${customer.first_name} ${customer.last_name}`,
+          company: customer.company_name,
+          status: customer.status
+        }
+      });
+    } else {
+      return res.status(404).json({
+        success: true,
+        hasCustomer: false,
+        customer: null
+      });
+    }
+  } catch (error) {
+    console.error('❌ Check group customer error:', error);
+    res.status(500).json({
+      error: 'Failed to check group customer',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: GET CUSTOMER BY GROUP ID =====
+exports.getCustomerByGroup = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    if (!groupId) {
+      return res.status(400).json({ error: 'Group ID is required' });
+    }
+
+    const customer = await User.findCustomerByGroup(groupId);
+
+    if (customer) {
+      res.json({
+        success: true,
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          name: `${customer.first_name} ${customer.last_name}`,
+          company: customer.company_name,
+          status: customer.status,
+          created_at: customer.created_at,
+          last_login: customer.last_login
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: true,
+        customer: null,
+        message: 'No customer found for this group'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Get customer by group error:', error);
+    res.status(500).json({
+      error: 'Failed to get customer by group',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: GET ALL GROUPS WITH CUSTOMER STATUS =====
+exports.getGroupsWithCustomerStatus = async (req, res) => {
+  try {
+    // This would need to fetch groups from Detrack and then check each one
+    // This is a placeholder - you'll need to implement this with DetrackService
+    res.status(501).json({
+      error: 'Not implemented yet',
+      message: 'This endpoint will return all groups with their customer status'
+    });
+  } catch (error) {
+    console.error('❌ Get groups with customer status error:', error);
+    res.status(500).json({
+      error: 'Failed to get groups with customer status',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: GET USER BY ID (with full details) =====
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        ...user,
+        group_id: user.group_id || null,
+        group_name: user.group_name || null
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get user by ID error:', error);
+    res.status(500).json({
+      error: 'Failed to get user',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: GET CUSTOMER STATS =====
+exports.getCustomerStats = async (req, res) => {
+  try {
+    const customers = await User.getAllCustomers();
+    
+    const stats = {
+      total: customers.length,
+      active: customers.filter(u => u.status === 'active').length,
+      inactive: customers.filter(u => u.status === 'inactive').length,
+      suspended: customers.filter(u => u.status === 'suspended').length,
+      withGroups: customers.filter(u => u.group_id).length,
+      withoutGroups: customers.filter(u => !u.group_id).length
+    };
+
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('❌ Get customer stats error:', error);
+    res.status(500).json({
+      error: 'Failed to get customer stats',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: GET STAFF STATS =====
+exports.getStaffStats = async (req, res) => {
+  try {
+    const staff = await User.getAllStaff();
+    
+    const stats = {
+      total: staff.length,
+      active: staff.filter(u => u.status === 'active').length,
+      inactive: staff.filter(u => u.status === 'inactive').length,
+      suspended: staff.filter(u => u.status === 'suspended').length,
+      admins: staff.filter(u => u.role === 'admin').length,
+      staff: staff.filter(u => u.role === 'staff').length
+    };
+
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('❌ Get staff stats error:', error);
+    res.status(500).json({
+      error: 'Failed to get staff stats',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: BULK UPDATE USER STATUS =====
+exports.bulkUpdateStatus = async (req, res) => {
+  try {
+    const { userIds, status } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: 'User IDs array is required' });
+    }
+
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const userId of userIds) {
+      try {
+        if (parseInt(userId) === req.user.id) {
+          errors.push({ userId, error: 'Cannot change your own status' });
+          continue;
+        }
+        const user = await User.updateStatus(userId, status);
+        if (user) {
+          results.push(user);
+        } else {
+          errors.push({ userId, error: 'User not found' });
+        }
+      } catch (err) {
+        errors.push({ userId, error: err.message });
+      }
+    }
+
+    console.log(`✅ Admin bulk updated ${results.length} users to status: ${status}`);
+
+    res.json({
+      success: true,
+      message: `Updated ${results.length} users to ${status}`,
+      results,
+      errors
+    });
+  } catch (error) {
+    console.error('❌ Bulk update status error:', error);
+    res.status(500).json({
+      error: 'Failed to bulk update status',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: BULK DELETE USERS =====
+exports.bulkDeleteUsers = async (req, res) => {
+  try {
+    const { userIds } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: 'User IDs array is required' });
+    }
+
+    // Check if trying to delete self
+    if (userIds.includes(req.user.id.toString())) {
+      return res.status(403).json({ error: 'Cannot delete your own account' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const userId of userIds) {
+      try {
+        const user = await User.delete(userId);
+        if (user) {
+          results.push(user);
+        } else {
+          errors.push({ userId, error: 'User not found' });
+        }
+      } catch (err) {
+        errors.push({ userId, error: err.message });
+      }
+    }
+
+    console.log(`✅ Admin bulk deleted ${results.length} users`);
+
+    res.json({
+      success: true,
+      message: `Deleted ${results.length} users`,
+      results,
+      errors
+    });
+  } catch (error) {
+    console.error('❌ Bulk delete users error:', error);
+    res.status(500).json({
+      error: 'Failed to bulk delete users',
+      details: error.message
+    });
   }
 };
