@@ -197,6 +197,199 @@ class Job {
       [JSON.stringify(scans), doNumber, userId]
     );
   }
+
+  // ===== NEW: GET JOBS BY GROUP =====
+  static async getJobsByGroup(groupId) {
+    const result = await pool.query(
+      'SELECT * FROM jobs WHERE group_id = $1 ORDER BY scheduled_date DESC, created_at DESC',
+      [groupId]
+    );
+    return result.rows;
+  }
+
+  // ===== NEW: GET JOBS BY GROUP WITH DATE FILTER =====
+  static async getJobsByGroupWithDate(groupId, date) {
+    const result = await pool.query(
+      'SELECT * FROM jobs WHERE group_id = $1 AND scheduled_date = $2 ORDER BY created_at DESC',
+      [groupId, date]
+    );
+    return result.rows;
+  }
+
+  // ===== NEW: GET JOB COUNT BY GROUP =====
+  static async getJobCountByGroup(groupId) {
+    const result = await pool.query(
+      'SELECT COUNT(*) as count FROM jobs WHERE group_id = $1',
+      [groupId]
+    );
+    return parseInt(result.rows[0].count);
+  }
+
+  // ===== NEW: CHECK IF DO NUMBER EXISTS IN GROUP =====
+  static async checkDoNumberInGroup(doNumber, groupId) {
+    const result = await pool.query(
+      'SELECT id FROM jobs WHERE do_number = $1 AND group_id = $2',
+      [doNumber, groupId]
+    );
+    return result.rows.length > 0;
+  }
+
+  // ===== NEW: GET JOB BY DO NUMBER AND GROUP =====
+  static async findByDoNumberAndGroup(doNumber, groupId) {
+    const result = await pool.query(
+      'SELECT * FROM jobs WHERE do_number = $1 AND group_id = $2',
+      [doNumber, groupId]
+    );
+    return result.rows[0];
+  }
+
+  // ===== NEW: GET BOX STATUS BY GROUP =====
+  static async getBoxStatusByGroup(doNumber, groupId) {
+    const result = await pool.query(
+      'SELECT barcodes, scans FROM jobs WHERE do_number = $1 AND group_id = $2',
+      [doNumber, groupId]
+    );
+    return result.rows[0];
+  }
+
+  // ===== NEW: UPDATE SCANS BY GROUP =====
+  static async updateScansByGroup(doNumber, groupId, scans) {
+    await pool.query(
+      'UPDATE jobs SET scans = $1, updated_at = CURRENT_TIMESTAMP WHERE do_number = $2 AND group_id = $3',
+      [JSON.stringify(scans), doNumber, groupId]
+    );
+  }
+
+  // ===== NEW: GET ALL JOBS WITH GROUP INFO =====
+  static async getAllJobsWithGroupInfo() {
+    const result = await pool.query(`
+      SELECT 
+        j.*,
+        u.group_name as user_group_name,
+        u.group_id as user_group_id
+      FROM jobs j
+      LEFT JOIN users u ON j.user_id = u.id
+      ORDER BY j.scheduled_date DESC, j.created_at DESC
+    `);
+    return result.rows;
+  }
+
+  // ===== NEW: GET JOBS STATS BY GROUP =====
+  static async getJobStatsByGroup(groupId) {
+    const result = await pool.query(`
+      SELECT 
+        COUNT(*) as total_jobs,
+        SUM(boxes) as total_boxes,
+        COUNT(DISTINCT customer_name) as unique_customers,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_jobs,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_jobs,
+        COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_jobs
+      FROM jobs
+      WHERE group_id = $1
+    `, [groupId]);
+    return result.rows[0];
+  }
+
+  // ===== NEW: GET RECENT JOBS BY GROUP =====
+  static async getRecentJobsByGroup(groupId, limit = 10) {
+    const result = await pool.query(
+      `SELECT 
+        do_number,
+        customer_name,
+        recipient_name,
+        boxes,
+        created_at,
+        scheduled_date,
+        delivery_address,
+        postcode,
+        status
+      FROM jobs
+      WHERE group_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2`,
+      [groupId, limit]
+    );
+    return result.rows;
+  }
+
+  // ===== NEW: GET TODAY'S JOBS BY GROUP =====
+  static async getTodayJobsByGroup(groupId) {
+    const today = new Date().toISOString().split('T')[0];
+    const result = await pool.query(
+      `SELECT 
+        do_number,
+        customer_name,
+        recipient_name,
+        boxes,
+        scheduled_date,
+        delivery_address,
+        postcode,
+        status
+      FROM jobs
+      WHERE group_id = $1 AND scheduled_date = $2
+      ORDER BY created_at DESC`,
+      [groupId, today]
+    );
+    return result.rows;
+  }
+
+  // ===== NEW: GET JOBS BY DATE RANGE FOR GROUP =====
+  static async getJobsByDateRangeForGroup(groupId, startDate, endDate) {
+    const result = await pool.query(
+      `SELECT 
+        do_number,
+        customer_name,
+        recipient_name,
+        boxes,
+        created_at,
+        scheduled_date,
+        delivery_address,
+        postcode,
+        status
+      FROM jobs
+      WHERE group_id = $1 AND scheduled_date BETWEEN $2 AND $3
+      ORDER BY scheduled_date DESC, created_at DESC`,
+      [groupId, startDate, endDate]
+    );
+    return result.rows;
+  }
+
+  // ===== NEW: GET GROUP JOB SUMMARY =====
+  static async getGroupJobSummary(groupId) {
+    const result = await pool.query(`
+      SELECT 
+        DATE(scheduled_date) as date,
+        COUNT(*) as job_count,
+        SUM(boxes) as box_count,
+        COUNT(DISTINCT customer_name) as customer_count
+      FROM jobs
+      WHERE group_id = $1
+      GROUP BY DATE(scheduled_date)
+      ORDER BY DATE(scheduled_date) DESC
+      LIMIT 30
+    `, [groupId]);
+    return result.rows;
+  }
+
+  // ===== NEW: GET JOBS BY CUSTOMER FOR GROUP =====
+  static async getJobsByCustomerForGroup(groupId, customerName) {
+    const result = await pool.query(
+      `SELECT 
+        do_number,
+        recipient_name,
+        boxes,
+        created_at,
+        scheduled_date,
+        delivery_address,
+        postcode,
+        status
+      FROM jobs
+      WHERE group_id = $1 AND (customer_name ILIKE $2 OR recipient_name ILIKE $2)
+      ORDER BY created_at DESC`,
+      [groupId, `%${customerName}%`]
+    );
+    return result.rows;
+  }
 }
 
 module.exports = Job;
