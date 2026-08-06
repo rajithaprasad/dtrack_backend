@@ -12,21 +12,33 @@ class User {
 
   static async findById(id) {
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, role, status, company_name, company_type, phone, address, created_at, last_login FROM users WHERE id = $1',
+      `SELECT id, email, first_name, last_name, role, status, 
+              company_name, company_type, phone, address, 
+              group_id, group_name, group_linked_at,
+              created_at, last_login 
+       FROM users WHERE id = $1`,
       [id]
     );
     return result.rows[0];
   }
 
   static async create(userData) {
-    const { email, passwordHash, firstName, lastName, role, companyName, companyType, phone, address } = userData;
+    const { 
+      email, passwordHash, firstName, lastName, role, 
+      companyName, companyType, phone, address,
+      groupId, groupName
+    } = userData;
+    
     const result = await pool.query(
       `INSERT INTO users (
         email, password_hash, first_name, last_name, role, 
-        company_name, company_type, phone, address, status, email_verified
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id, email, first_name, last_name, role, company_name, created_at`,
-      [email, passwordHash, firstName, lastName, role, companyName, companyType, phone, address, 'active', false]
+        company_name, company_type, phone, address, status, email_verified,
+        group_id, group_name, group_linked_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING id, email, first_name, last_name, role, company_name, group_id, group_name, created_at`,
+      [email, passwordHash, firstName, lastName, role, 
+       companyName, companyType, phone, address, 'active', false,
+       groupId, groupName, new Date().toISOString()]
     );
     return result.rows[0];
   }
@@ -57,7 +69,10 @@ class User {
 
   static async getAll() {
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, role, status, company_name, created_at, last_login FROM users ORDER BY created_at DESC'
+      `SELECT id, email, first_name, last_name, role, status, 
+              company_name, phone, group_id, group_name,
+              created_at, last_login 
+       FROM users ORDER BY created_at DESC`
     );
     return result.rows;
   }
@@ -67,6 +82,50 @@ class User {
       'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
       [id]
     );
+  }
+
+  // 👇 NEW: Find users by group
+  static async findByGroup(groupId) {
+    const result = await pool.query(
+      `SELECT id, email, first_name, last_name, role, status, 
+              company_name, phone, group_id, group_name
+       FROM users WHERE group_id = $1 ORDER BY created_at DESC`,
+      [groupId]
+    );
+    return result.rows;
+  }
+
+  // 👇 NEW: Check if group already has a customer account
+  static async findCustomerByGroup(groupId) {
+    const result = await pool.query(
+      `SELECT id, email, first_name, last_name, company_name, 
+              group_id, group_name, status
+       FROM users WHERE group_id = $1 AND role = 'customer'`,
+      [groupId]
+    );
+    return result.rows[0];
+  }
+
+  // 👇 NEW: Get all customers (for admin)
+  static async getAllCustomers() {
+    const result = await pool.query(
+      `SELECT id, email, first_name, last_name, role, status, 
+              company_name, phone, group_id, group_name,
+              created_at, last_login 
+       FROM users WHERE role = 'customer' ORDER BY created_at DESC`
+    );
+    return result.rows;
+  }
+
+  // 👇 NEW: Get all staff (for admin)
+  static async getAllStaff() {
+    const result = await pool.query(
+      `SELECT id, email, first_name, last_name, role, status, 
+              company_name, phone, group_id, group_name,
+              created_at, last_login 
+       FROM users WHERE role IN ('staff', 'admin') ORDER BY created_at DESC`
+    );
+    return result.rows;
   }
 }
 
