@@ -8,8 +8,12 @@ const adminController = require('../controllers/adminController');
 router.use(authenticate);
 router.use(authorize('admin'));
 
+// User management
 router.get('/users', adminController.getUsers);
+router.get('/users/customers', adminController.getCustomers);
+router.get('/users/staff', adminController.getStaff);
 router.post('/users', adminController.createUser);
+router.post('/users/customer', adminController.createCustomer);
 router.patch('/users/:userId/status', adminController.updateUserStatus);
 router.patch('/users/:userId/role', adminController.updateUserRole);
 router.delete('/users/:userId', adminController.deleteUser);
