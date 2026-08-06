@@ -18,4 +18,7 @@ router.patch('/users/:userId/status', adminController.updateUserStatus);
 router.patch('/users/:userId/role', adminController.updateUserRole);
 router.delete('/users/:userId', adminController.deleteUser);
 
+// 🔥 NEW: Check if group has customer
+router.get('/groups/:groupId/customer', adminController.checkGroupCustomer);
+
 module.exports = router;
