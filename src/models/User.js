@@ -84,7 +84,7 @@ class User {
     );
   }
 
-  // 👇 NEW: Find users by group
+  // Find users by group
   static async findByGroup(groupId) {
     const result = await pool.query(
       `SELECT id, email, first_name, last_name, role, status, 
@@ -95,7 +95,7 @@ class User {
     return result.rows;
   }
 
-  // 👇 NEW: Check if group already has a customer account
+  // 🔥 Check if group already has a customer account
   static async findCustomerByGroup(groupId) {
     const result = await pool.query(
       `SELECT id, email, first_name, last_name, company_name, 
@@ -106,7 +106,7 @@ class User {
     return result.rows[0];
   }
 
-  // 👇 NEW: Get all customers (for admin)
+  // Get all customers
   static async getAllCustomers() {
     const result = await pool.query(
       `SELECT id, email, first_name, last_name, role, status, 
@@ -117,7 +117,7 @@ class User {
     return result.rows;
   }
 
-  // 👇 NEW: Get all staff (for admin)
+  // Get all staff
   static async getAllStaff() {
     const result = await pool.query(
       `SELECT id, email, first_name, last_name, role, status, 
