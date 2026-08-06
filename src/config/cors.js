@@ -1,6 +1,7 @@
 // src/config/cors.js
+
 const corsOptions = {
-  origin: '*', // ✅ Already correct
+  origin: '*', // Allow ALL origins
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
   allowedHeaders: [
     'Content-Type',
@@ -8,12 +9,8 @@ const corsOptions = {
     'X-Requested-With',
     'Accept',
     'Origin',
-    'Access-Control-Allow-Origin',
-    'Access-Control-Allow-Headers',
-    'Access-Control-Allow-Methods',
     'X-API-KEY',
   ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
   credentials: true,
   preflightContinue: false,
   optionsSuccessStatus: 204,
