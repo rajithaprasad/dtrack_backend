@@ -8,11 +8,43 @@ exports.getUsers = async (req, res) => {
     const users = await User.getAll();
     res.json({
       success: true,
-      users
+      users: users.map(user => ({
+        ...user,
+        group_id: user.group_id || null,
+        group_name: user.group_name || null
+      }))
     });
   } catch (error) {
     console.error('❌ Get users error:', error);
     res.status(500).json({ error: 'Failed to get users' });
+  }
+};
+
+// ===== ADMIN: GET CUSTOMERS ONLY =====
+exports.getCustomers = async (req, res) => {
+  try {
+    const customers = await User.getAllCustomers();
+    res.json({
+      success: true,
+      customers
+    });
+  } catch (error) {
+    console.error('❌ Get customers error:', error);
+    res.status(500).json({ error: 'Failed to get customers' });
+  }
+};
+
+// ===== ADMIN: GET STAFF ONLY =====
+exports.getStaff = async (req, res) => {
+  try {
+    const staff = await User.getAllStaff();
+    res.json({
+      success: true,
+      staff
+    });
+  } catch (error) {
+    console.error('❌ Get staff error:', error);
+    res.status(500).json({ error: 'Failed to get staff' });
   }
 };
 
@@ -27,8 +59,8 @@ exports.createUser = async (req, res) => {
       });
     }
 
-    if (!['customer', 'staff', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Must be customer, staff, or admin' });
+    if (!['staff', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be staff or admin' });
     }
 
     const existingUser = await User.findByEmail(email.toLowerCase());
@@ -46,8 +78,11 @@ exports.createUser = async (req, res) => {
       lastName,
       role,
       companyName,
+      companyType: 'internal',
       phone,
-      address
+      address,
+      groupId: null,
+      groupName: null
     });
 
     console.log(`✅ Admin created new user: ${newUser.email} (${newUser.role})`);
@@ -62,6 +97,91 @@ exports.createUser = async (req, res) => {
     console.error('❌ Admin create user error:', error);
     res.status(500).json({
       error: 'Failed to create user',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: CREATE CUSTOMER WITH GROUP =====
+exports.createCustomer = async (req, res) => {
+  try {
+    const { 
+      email, password, firstName, lastName, 
+      companyName, phone, address,
+      groupId, groupName
+    } = req.body;
+
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({
+        error: 'Missing required fields: email, password, firstName, lastName'
+      });
+    }
+
+    if (!groupId) {
+      return res.status(400).json({ error: 'Group selection is required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const existingUser = await User.findByEmail(email.toLowerCase());
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+
+    // Check if group already has a customer
+    const existingCustomer = await User.findCustomerByGroup(groupId);
+    if (existingCustomer) {
+      return res.status(409).json({ 
+        error: 'This group already has a customer account',
+        existingCustomer: {
+          id: existingCustomer.id,
+          email: existingCustomer.email,
+          name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
+          company: existingCustomer.company_name
+        }
+      });
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const newUser = await User.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      firstName,
+      lastName,
+      role: 'customer',
+      companyName,
+      companyType: 'detrack_customer',
+      phone,
+      address,
+      groupId,
+      groupName
+    });
+
+    console.log(`✅ Admin created customer: ${newUser.email} for group: ${groupName}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Customer account created successfully',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.first_name,
+        lastName: newUser.last_name,
+        role: newUser.role,
+        companyName: newUser.company_name,
+        groupId: newUser.group_id,
+        groupName: newUser.group_name
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Admin create customer error:', error);
+    res.status(500).json({
+      error: 'Failed to create customer',
       details: error.message
     });
   }
