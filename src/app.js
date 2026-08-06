@@ -62,20 +62,25 @@ app.get('/', (req, res) => {
     message: 'Detrack API integration with PostgreSQL and Authentication is ready',
     endpoints: {
       auth: {
-        'POST /api/auth/register': 'Register a new user',
+        'POST /api/auth/register': 'Register a new customer (with group)',
         'POST /api/auth/login': 'Login user',
         'GET /api/auth/me': 'Get current user (authenticated)',
         'POST /api/auth/logout': 'Logout (authenticated)',
+        'POST /api/auth/admin/create-customer': 'Admin create customer with group',
+        'POST /api/auth/admin/create-staff': 'Admin create staff',
       },
       admin: {
         'GET /api/admin/users': 'Get all users (admin only)',
-        'POST /api/admin/users': 'Create user (admin only)',
+        'GET /api/admin/users/customers': 'Get all customers (admin only)',
+        'GET /api/admin/users/staff': 'Get all staff (admin only)',
+        'POST /api/admin/users': 'Create staff/admin (admin only)',
+        'POST /api/admin/users/customer': 'Create customer with group (admin only)',
         'PATCH /api/admin/users/:userId/status': 'Update user status (admin only)',
         'PATCH /api/admin/users/:userId/role': 'Update user role (admin only)',
         'DELETE /api/admin/users/:userId': 'Delete user (admin only)',
       },
       jobs: {
-        'GET /api/db-jobs': 'Get jobs from database',
+        'GET /api/db-jobs': 'Get jobs from database (filtered by group for customers)',
         'GET /api/db-jobs/:id': 'Get single job from database',
         'POST /api/create-job': 'Create a single job',
         'POST /api/upload-manifest': 'Upload Excel and create jobs',
@@ -91,6 +96,16 @@ app.get('/', (req, res) => {
         'GET /api/jobs': 'Get jobs from Detrack API',
         'GET /api/jobs/:id': 'Get single job from Detrack API',
         'GET /api/job-by-donumber': 'Get job by DO number from Detrack',
+        'GET /api/groups': 'Get groups from Detrack (paginated)',
+        'GET /api/groups/search-all': 'Search all groups (all pages)',
+      },
+      scanning: {
+        'GET /api/box-status/:do_number': 'Get box scan status',
+        'POST /api/scan-box': 'Scan a box',
+        'POST /api/bulk-scan': 'Bulk scan boxes',
+      },
+      dashboard: {
+        'GET /api/dashboard-stats': 'Get dashboard statistics',
       },
       vehicles: {
         'GET /api/vehicles': 'Get vehicles from Detrack API',
@@ -112,8 +127,13 @@ app.use((req, res) => {
       'POST /api/auth/register',
       'POST /api/auth/login',
       'GET /api/auth/me',
+      'POST /api/auth/admin/create-customer',
+      'POST /api/auth/admin/create-staff',
       'GET /api/admin/users',
+      'GET /api/admin/users/customers',
+      'GET /api/admin/users/staff',
       'POST /api/admin/users',
+      'POST /api/admin/users/customer',
       'PATCH /api/admin/users/:userId/status',
       'PATCH /api/admin/users/:userId/role',
       'DELETE /api/admin/users/:userId',
@@ -129,7 +149,13 @@ app.use((req, res) => {
       'GET /api/jobs',
       'GET /api/jobs/:id',
       'GET /api/job-by-donumber',
-      'GET /api/vehicles'
+      'GET /api/vehicles',
+      'GET /api/groups',
+      'GET /api/groups/search-all',
+      'GET /api/box-status/:do_number',
+      'POST /api/scan-box',
+      'POST /api/bulk-scan',
+      'GET /api/dashboard-stats'
     ]
   });
 });
