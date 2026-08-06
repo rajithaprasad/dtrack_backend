@@ -14,7 +14,9 @@ const authenticate = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, role, status FROM users WHERE id = $1',
+      `SELECT id, email, first_name, last_name, role, status,
+              group_id, group_name
+       FROM users WHERE id = $1`,
       [decoded.userId]
     );
     
@@ -27,7 +29,17 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'Account is not active' });
     }
     
-    req.user = user;
+    // Include group info in req.user
+    req.user = {
+      id: user.id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role,
+      status: user.status,
+      group_id: user.group_id,
+      group_name: user.group_name
+    };
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
