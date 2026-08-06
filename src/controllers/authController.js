@@ -4,10 +4,14 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { JWT_SECRET, JWT_EXPIRY } = require('../config/jwt');
 
-// ===== REGISTER =====
+// ===== REGISTER (Customer with group) =====
 exports.register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, companyName, companyType, phone, address } = req.body;
+    const { 
+      email, password, firstName, lastName, 
+      companyName, companyType, phone, address,
+      groupId, groupName
+    } = req.body;
 
     if (!email || !password || !firstName || !lastName) {
       return res.status(400).json({
@@ -24,9 +28,32 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
+    // Check if group is provided for customer
+    if (!groupId) {
+      return res.status(400).json({ 
+        error: 'Group selection is required for customer registration' 
+      });
+    }
+
     const existingUser = await User.findByEmail(email.toLowerCase());
     if (existingUser) {
       return res.status(409).json({ error: 'Email already registered' });
+    }
+
+    // Check if this group already has a customer
+    if (groupId) {
+      const existingCustomer = await User.findCustomerByGroup(groupId);
+      if (existingCustomer) {
+        return res.status(409).json({ 
+          error: 'This group already has a customer account',
+          existingCustomer: {
+            id: existingCustomer.id,
+            email: existingCustomer.email,
+            name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
+            company: existingCustomer.company_name
+          }
+        });
+      }
     }
 
     const saltRounds = 10;
@@ -41,7 +68,9 @@ exports.register = async (req, res) => {
       companyName,
       companyType,
       phone,
-      address
+      address,
+      groupId,
+      groupName
     });
 
     const token = jwt.sign(
@@ -50,18 +79,20 @@ exports.register = async (req, res) => {
       { expiresIn: JWT_EXPIRY }
     );
 
-    console.log(`✅ New user registered: ${newUser.email} (${newUser.role})`);
+    console.log(`✅ New customer registered: ${newUser.email} for group: ${groupName}`);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Customer account created successfully',
       user: {
         id: newUser.id,
         email: newUser.email,
         firstName: newUser.first_name,
         lastName: newUser.last_name,
         role: newUser.role,
-        companyName: newUser.company_name
+        companyName: newUser.company_name,
+        groupId: newUser.group_id,
+        groupName: newUser.group_name
       },
       token
     });
@@ -117,7 +148,9 @@ exports.login = async (req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
         role: user.role,
-        companyName: user.company_name
+        companyName: user.company_name,
+        groupId: user.group_id,
+        groupName: user.group_name
       },
       token
     });
@@ -140,7 +173,11 @@ exports.getMe = async (req, res) => {
     }
     res.json({
       success: true,
-      user
+      user: {
+        ...user,
+        groupId: user.group_id,
+        groupName: user.group_name
+      }
     });
   } catch (error) {
     console.error('❌ Get user error:', error);
@@ -151,4 +188,148 @@ exports.getMe = async (req, res) => {
 // ===== LOGOUT =====
 exports.logout = (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
+};
+
+// ===== ADMIN: CREATE CUSTOMER WITH GROUP =====
+exports.adminCreateCustomer = async (req, res) => {
+  try {
+    const { 
+      email, password, firstName, lastName, 
+      companyName, phone, address,
+      groupId, groupName
+    } = req.body;
+
+    // Only admin can create customers with groups
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can create customer accounts' });
+    }
+
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({
+        error: 'Missing required fields: email, password, firstName, lastName'
+      });
+    }
+
+    if (!groupId) {
+      return res.status(400).json({ error: 'Group selection is required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const existingUser = await User.findByEmail(email.toLowerCase());
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+
+    // Check if group already has a customer
+    const existingCustomer = await User.findCustomerByGroup(groupId);
+    if (existingCustomer) {
+      return res.status(409).json({ 
+        error: 'This group already has a customer account',
+        existingCustomer: {
+          id: existingCustomer.id,
+          email: existingCustomer.email,
+          name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
+          company: existingCustomer.company_name
+        }
+      });
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const newUser = await User.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      firstName,
+      lastName,
+      role: 'customer',
+      companyName,
+      companyType: 'detrack_customer',
+      phone,
+      address,
+      groupId,
+      groupName
+    });
+
+    console.log(`✅ Admin created customer: ${newUser.email} for group: ${groupName}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Customer account created successfully',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.first_name,
+        lastName: newUser.last_name,
+        role: newUser.role,
+        companyName: newUser.company_name,
+        groupId: newUser.group_id,
+        groupName: newUser.group_name
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Admin create customer error:', error);
+    res.status(500).json({
+      error: 'Failed to create customer',
+      details: error.message
+    });
+  }
+};
+
+// ===== ADMIN: CREATE STAFF/ADMIN (existing) =====
+exports.adminCreateStaff = async (req, res) => {
+  try {
+    const { email, password, firstName, lastName, role, companyName, phone, address } = req.body;
+
+    if (!email || !password || !firstName || !lastName || !role) {
+      return res.status(400).json({
+        error: 'Missing required fields: email, password, firstName, lastName, role'
+      });
+    }
+
+    if (!['staff', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be staff or admin' });
+    }
+
+    const existingUser = await User.findByEmail(email.toLowerCase());
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const newUser = await User.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      firstName,
+      lastName,
+      role,
+      companyName,
+      companyType: 'internal',
+      phone,
+      address,
+      groupId: null,
+      groupName: null
+    });
+
+    console.log(`✅ Admin created staff: ${newUser.email} (${newUser.role})`);
+
+    res.status(201).json({
+      success: true,
+      message: `User created successfully with role: ${role}`,
+      user: newUser
+    });
+
+  } catch (error) {
+    console.error('❌ Admin create staff error:', error);
+    res.status(500).json({
+      error: 'Failed to create user',
+      details: error.message
+    });
+  }
 };
