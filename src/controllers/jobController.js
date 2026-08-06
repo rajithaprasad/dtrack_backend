@@ -6,12 +6,13 @@ const Job = require('../models/Job');
 const DetrackService = require('../services/detrackService');
 const { getValue, getNumber, getValidDate, generateBarcodes, V2_VALID_FIELDS } = require('../utils/helpers');
 
-// ===== FETCH JOBS FROM DATABASE =====
+// ===== FETCH JOBS FROM DATABASE (WITH GROUP FILTERING) =====
 exports.getJobs = async (req, res) => {
   try {
     const { date } = req.query;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
     
     let jobs;
     
@@ -28,9 +29,23 @@ exports.getJobs = async (req, res) => {
       }
       console.log(`✅ Admin/Staff fetched ${jobs.length} jobs (all users)`);
     } else {
-      // Customer - only their jobs
-      jobs = await Job.findAll(userId, date);
-      console.log(`✅ Customer fetched ${jobs.length} jobs for user ${userId}`);
+      // Customer - only their group's jobs
+      if (userGroupId) {
+        const query = `
+          SELECT j.*, u.group_name as customer_group_name 
+          FROM jobs j
+          LEFT JOIN users u ON j.user_id = u.id
+          WHERE j.group_id = $1
+          ORDER BY j.scheduled_date DESC, j.created_at DESC
+        `;
+        const result = await pool.query(query, [userGroupId]);
+        jobs = result.rows;
+        console.log(`✅ Customer fetched ${jobs.length} jobs for group: ${userGroupId}`);
+      } else {
+        // Fallback: get jobs created by this user
+        jobs = await Job.findAll(userId, date);
+        console.log(`✅ Customer fetched ${jobs.length} jobs for user ${userId}`);
+      }
     }
     
     return res.json({
@@ -52,6 +67,7 @@ exports.getJob = async (req, res) => {
     const id = req.params.id;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
     
     let job;
     
@@ -61,8 +77,18 @@ exports.getJob = async (req, res) => {
       const result = await pool.query(query, [id]);
       job = result.rows[0];
     } else {
-      // Customer - only if job belongs to them
-      job = await Job.findById(userId, id);
+      // Customer - only if job belongs to their group
+      const query = `
+        SELECT j.* FROM jobs j
+        WHERE (j.id = $1 OR j.do_number = $1) AND j.group_id = $2
+      `;
+      const result = await pool.query(query, [id, userGroupId]);
+      job = result.rows[0];
+      
+      // Fallback: check if user created it
+      if (!job) {
+        job = await Job.findById(userId, id);
+      }
     }
     
     if (!job) {
@@ -109,6 +135,9 @@ exports.createJob = async (req, res) => {
   try {
     const jobData = req.body;
     const userId = req.user.id;
+    const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
+    const userGroupName = req.user.group_name;
     
     console.log(`📦 Creating single job in Detrack for user ${userId}...`);
 
@@ -121,7 +150,17 @@ exports.createJob = async (req, res) => {
       }
     }
 
-    // Pass group_id to Detrack service if provided
+    // If user is customer, use their group_id automatically
+    let groupId = jobData.group_id || '';
+    let groupName = jobData.group || '';
+    
+    if (userRole === 'customer' && userGroupId) {
+      groupId = userGroupId;
+      groupName = userGroupName || '';
+      console.log(`🔒 Customer forced to use group: ${groupId}`);
+    }
+
+    // Pass group_id to Detrack service
     const detrackPayload = {
       do_number: jobData.do_number,
       address: jobData.address,
@@ -130,8 +169,8 @@ exports.createJob = async (req, res) => {
       phone: jobData.phone || '',
       notify_email: jobData.notify_email || '',
       instructions: jobData.instructions || '',
-      group: jobData.group || '',
-      group_id: jobData.group_id || '', // 👈 Add group_id support
+      group: groupName || jobData.group || '',
+      group_id: groupId || jobData.group_id || '',
       delivery_type: jobData.delivery_type || 'Home Delivery',
       time_window: jobData.time_window || '07:00-18:00',
       cartons: jobData.cartons || jobData.boxes || 1,
@@ -199,8 +238,8 @@ exports.createJob = async (req, res) => {
         barcodes: barcodes,
         detrack_id: detrackId,
         source: 'customer',
-        group_name: jobData.group || '',
-        group_id: jobData.group_id || '', // 👈 Store group_id in database
+        group_name: groupName || jobData.group || '',
+        group_id: groupId || jobData.group_id || '',
         pickup_address: jobData.pickup_address || '',
         user_id: userId
       });
@@ -230,12 +269,13 @@ exports.createJob = async (req, res) => {
   }
 };
 
-// src/controllers/jobController.js
-
 // ===== UPLOAD EXCEL MANIFEST =====
 exports.uploadManifest = async (req, res) => {
   try {
     const userId = req.user.id;
+    const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
+    const userGroupName = req.user.group_name;
     
     console.log(`📁 File upload received from user ${userId}`);
     console.log('📄 File name:', req.file.originalname);
@@ -350,7 +390,15 @@ exports.uploadManifest = async (req, res) => {
       const cartons = getNumber(row, 'Cartons', 'No. of Shipping Labels');
       const boxes = noOfShippingLabels || cartons || 1;
 
-      const groupId = getValue(row, 'Group ID', 'Group Id', 'GroupID', 'group_id');
+      // Determine group_id: from Excel or use user's group if customer
+      let groupId = getValue(row, 'Group ID', 'Group Id', 'GroupID', 'group_id');
+      let groupName = getValue(row, 'Group Name', 'Group', 'group_name', 'group');
+      
+      // If customer, force their group
+      if (userRole === 'customer' && userGroupId) {
+        groupId = userGroupId;
+        groupName = userGroupName || '';
+      }
 
       const job = {
         date: dateStr,
@@ -361,6 +409,7 @@ exports.uploadManifest = async (req, res) => {
         notify_email: getValue(row, 'Notify Email', 'Notify email'),
         instructions: getValue(row, 'Instructions'),
         group_id: groupId || '',
+        group: groupName || '',
         delivery_type: getValue(row, 'Delivery Type', 'Job type', 'Home Delivery'),
         time_window: getValue(row, 'Time Window', '07:00-18:00'),
         cartons: cartons,
@@ -395,6 +444,7 @@ exports.uploadManifest = async (req, res) => {
           notify_email: job.notify_email,
           instructions: job.instructions,
           group_id: job.group_id,
+          group: job.group,
           delivery_type: job.delivery_type,
           time_window: job.time_window,
           cartons: job.cartons,
@@ -475,7 +525,6 @@ exports.uploadManifest = async (req, res) => {
     });
   }
 };
-// src/controllers/jobController.js
 
 // ===== GET GROUPS =====
 exports.getGroups = async (req, res) => {
@@ -522,6 +571,7 @@ exports.searchAllGroups = async (req, res) => {
     });
   }
 };
+
 // ===== FETCH JOBS FROM DETRACK API =====
 exports.getDetrackJobs = async (req, res) => {
   try {
@@ -566,6 +616,7 @@ exports.getBoxStatus = async (req, res) => {
     const { do_number } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
 
     let job;
     
@@ -575,8 +626,18 @@ exports.getBoxStatus = async (req, res) => {
       const result = await pool.query(query, [do_number]);
       job = result.rows[0];
     } else {
-      // Customer - only if job belongs to them
-      job = await Job.getBoxStatus(userId, do_number);
+      // Customer - only if job belongs to their group
+      const query = `
+        SELECT barcodes, scans FROM jobs 
+        WHERE do_number = $1 AND group_id = $2
+      `;
+      const result = await pool.query(query, [do_number, userGroupId]);
+      job = result.rows[0];
+      
+      // Fallback: check if user created it
+      if (!job) {
+        job = await Job.getBoxStatus(userId, do_number);
+      }
     }
 
     if (!job) {
@@ -628,12 +689,13 @@ exports.getBoxStatus = async (req, res) => {
   }
 };
 
-// ===== SCAN BOX (Mobile App) =====
+// ===== SCAN BOX =====
 exports.scanBox = async (req, res) => {
   try {
     const { do_number, barcode, location } = req.body;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
 
     let job;
     
@@ -643,8 +705,17 @@ exports.scanBox = async (req, res) => {
       const result = await pool.query(query, [do_number]);
       job = result.rows[0];
     } else {
-      // Customer - only if job belongs to them
-      job = await Job.getBoxStatus(userId, do_number);
+      // Customer - only if job belongs to their group
+      const query = `
+        SELECT barcodes, scans FROM jobs 
+        WHERE do_number = $1 AND group_id = $2
+      `;
+      const result = await pool.query(query, [do_number, userGroupId]);
+      job = result.rows[0];
+      
+      if (!job) {
+        job = await Job.getBoxStatus(userId, do_number);
+      }
     }
 
     if (!job) {
@@ -722,23 +793,31 @@ exports.scanBox = async (req, res) => {
   }
 };
 
-// ===== BULK SCAN (Multiple Boxes) =====
+// ===== BULK SCAN =====
 exports.bulkScan = async (req, res) => {
   try {
     const { do_number, barcodes: scannedBarcodes, location } = req.body;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const userGroupId = req.user.group_id;
 
     let job;
     
-    // If admin or staff, get any job by do_number
     if (userRole === 'admin' || userRole === 'staff') {
       const query = 'SELECT barcodes, scans FROM jobs WHERE do_number = $1';
       const result = await pool.query(query, [do_number]);
       job = result.rows[0];
     } else {
-      // Customer - only if job belongs to them
-      job = await Job.getBoxStatus(userId, do_number);
+      const query = `
+        SELECT barcodes, scans FROM jobs 
+        WHERE do_number = $1 AND group_id = $2
+      `;
+      const result = await pool.query(query, [do_number, userGroupId]);
+      job = result.rows[0];
+      
+      if (!job) {
+        job = await Job.getBoxStatus(userId, do_number);
+      }
     }
 
     if (!job) {
@@ -783,7 +862,6 @@ exports.bulkScan = async (req, res) => {
       scanned.push(barcode);
     }
 
-    // Update scans - admin/staff can update any job
     if (userRole === 'admin' || userRole === 'staff') {
       await pool.query(
         'UPDATE jobs SET scans = $1, updated_at = CURRENT_TIMESTAMP WHERE do_number = $2',
@@ -822,10 +900,10 @@ exports.getDashboardStats = async (req, res) => {
   try {
     var userId = req.user.id;
     var userRole = req.user.role;
+    var userGroupId = req.user.group_id;
     
     console.log('📊 Fetching dashboard stats for user ' + userId + ' (' + userRole + ')');
 
-    // Get jobs for the user
     var jobQuery = '';
     var jobParams = [];
 
@@ -839,10 +917,30 @@ exports.getDashboardStats = async (req, res) => {
           created_at,
           scheduled_date,
           delivery_address,
-          postcode
+          postcode,
+          group_id,
+          group_name
         FROM jobs
         ORDER BY created_at DESC
       `;
+    } else if (userGroupId) {
+      jobQuery = `
+        SELECT 
+          do_number,
+          customer_name,
+          recipient_name,
+          boxes,
+          created_at,
+          scheduled_date,
+          delivery_address,
+          postcode,
+          group_id,
+          group_name
+        FROM jobs
+        WHERE group_id = $1
+        ORDER BY created_at DESC
+      `;
+      jobParams = [userGroupId];
     } else {
       jobQuery = `
         SELECT 
@@ -853,7 +951,9 @@ exports.getDashboardStats = async (req, res) => {
           created_at,
           scheduled_date,
           delivery_address,
-          postcode
+          postcode,
+          group_id,
+          group_name
         FROM jobs
         WHERE user_id = $1
         ORDER BY created_at DESC
@@ -866,7 +966,6 @@ exports.getDashboardStats = async (req, res) => {
 
     console.log('📦 Found ' + jobs.length + ' jobs');
 
-    // If no jobs, return empty stats
     if (jobs.length === 0) {
       return res.json({
         success: true,
@@ -884,7 +983,6 @@ exports.getDashboardStats = async (req, res) => {
       });
     }
 
-    // Calculate stats
     var totalJobs = jobs.length;
     var totalBoxes = 0;
     var customerSet = {};
@@ -900,15 +998,12 @@ exports.getDashboardStats = async (req, res) => {
       var scheduledDate = job.scheduled_date;
       var customerName = job.customer_name || job.recipient_name || 'Unknown';
 
-      // Count boxes
       totalBoxes += boxes;
 
-      // Unique customers
       if (customerName && customerName !== 'Unknown') {
         customerSet[customerName] = true;
       }
 
-      // Today's jobs
       if (scheduledDate === todayStr) {
         todayJobs.push({
           reference: job.do_number,
@@ -917,11 +1012,11 @@ exports.getDashboardStats = async (req, res) => {
           deliveryAddress: job.delivery_address || '',
           postcode: job.postcode || '',
           boxes: boxes,
-          scheduledDate: scheduledDate
+          scheduledDate: scheduledDate,
+          groupName: job.group_name || ''
         });
       }
 
-      // Group by date (for chart)
       if (scheduledDate) {
         var dateKey = scheduledDate;
         if (!jobsByDateMap[dateKey]) {
@@ -936,7 +1031,6 @@ exports.getDashboardStats = async (req, res) => {
       }
     }
 
-    // Convert jobsByDate to array and sort by date
     var jobsByDate = Object.keys(jobsByDateMap)
       .sort()
       .slice(-7)
@@ -950,7 +1044,6 @@ exports.getDashboardStats = async (req, res) => {
         };
       });
 
-    // Recent jobs (last 10)
     var recentJobs = jobs.slice(0, 10).map(function(job) {
       return {
         reference: job.do_number,
@@ -960,7 +1053,8 @@ exports.getDashboardStats = async (req, res) => {
         createdAt: job.created_at,
         scheduledDate: job.scheduled_date,
         deliveryAddress: job.delivery_address || '',
-        postcode: job.postcode || ''
+        postcode: job.postcode || '',
+        groupName: job.group_name || ''
       };
     });
 
