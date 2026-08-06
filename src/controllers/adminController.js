@@ -130,16 +130,18 @@ exports.createCustomer = async (req, res) => {
       return res.status(409).json({ error: 'Email already exists' });
     }
 
-    // Check if group already has a customer
+    // 🔥 CRITICAL: Check if group already has a customer
     const existingCustomer = await User.findCustomerByGroup(groupId);
     if (existingCustomer) {
       return res.status(409).json({ 
         error: 'This group already has a customer account',
+        code: 'GROUP_ALREADY_HAS_CUSTOMER',
         existingCustomer: {
           id: existingCustomer.id,
           email: existingCustomer.email,
           name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
-          company: existingCustomer.company_name
+          company: existingCustomer.company_name,
+          status: existingCustomer.status
         }
       });
     }
