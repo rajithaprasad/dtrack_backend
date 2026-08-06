@@ -40,20 +40,20 @@ exports.register = async (req, res) => {
       return res.status(409).json({ error: 'Email already registered' });
     }
 
-    // Check if this group already has a customer
-    if (groupId) {
-      const existingCustomer = await User.findCustomerByGroup(groupId);
-      if (existingCustomer) {
-        return res.status(409).json({ 
-          error: 'This group already has a customer account',
-          existingCustomer: {
-            id: existingCustomer.id,
-            email: existingCustomer.email,
-            name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
-            company: existingCustomer.company_name
-          }
-        });
-      }
+    // 🔥 CRITICAL: Check if this group already has a customer account
+    const existingCustomer = await User.findCustomerByGroup(groupId);
+    if (existingCustomer) {
+      return res.status(409).json({ 
+        error: 'This group already has a customer account',
+        code: 'GROUP_ALREADY_HAS_CUSTOMER',
+        existingCustomer: {
+          id: existingCustomer.id,
+          email: existingCustomer.email,
+          name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
+          company: existingCustomer.company_name,
+          status: existingCustomer.status
+        }
+      });
     }
 
     const saltRounds = 10;
@@ -223,16 +223,18 @@ exports.adminCreateCustomer = async (req, res) => {
       return res.status(409).json({ error: 'Email already exists' });
     }
 
-    // Check if group already has a customer
+    // 🔥 CRITICAL: Check if group already has a customer
     const existingCustomer = await User.findCustomerByGroup(groupId);
     if (existingCustomer) {
       return res.status(409).json({ 
         error: 'This group already has a customer account',
+        code: 'GROUP_ALREADY_HAS_CUSTOMER',
         existingCustomer: {
           id: existingCustomer.id,
           email: existingCustomer.email,
           name: `${existingCustomer.first_name} ${existingCustomer.last_name}`,
-          company: existingCustomer.company_name
+          company: existingCustomer.company_name,
+          status: existingCustomer.status
         }
       });
     }
@@ -280,7 +282,7 @@ exports.adminCreateCustomer = async (req, res) => {
   }
 };
 
-// ===== ADMIN: CREATE STAFF/ADMIN (existing) =====
+// ===== ADMIN: CREATE STAFF/ADMIN =====
 exports.adminCreateStaff = async (req, res) => {
   try {
     const { email, password, firstName, lastName, role, companyName, phone, address } = req.body;
