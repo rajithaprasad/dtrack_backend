@@ -21,16 +21,16 @@ router.get('/jobs', jobController.getDetrackJobs);
 router.get('/jobs/:id', jobController.getDetrackJob);
 router.get('/job-by-donumber', jobController.getJobByDoNumber);
 
-// ===== BOX SCANNING ROUTES =====
-// Get box status for a job
+// Box scanning routes
 router.get('/box-status/:do_number', jobController.getBoxStatus);
-
-// Scan a single box (Mobile App)
 router.post('/scan-box', jobController.scanBox);
+router.post('/bulk-scan', jobController.bulkScan);
+
+// Dashboard
 router.get('/dashboard-stats', jobController.getDashboardStats);
 
-// Bulk scan multiple boxes
-router.post('/bulk-scan', jobController.bulkScan);
+// Groups
 router.get('/groups', jobController.getGroups);
 router.get('/groups/search-all', jobController.searchAllGroups);
+
 module.exports = router;
